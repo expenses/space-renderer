@@ -1,0 +1,23 @@
+// Node declarations
+node Triangle([readwrite(rendertarget)] texture renderTarget : SV_Target0);
+
+// Sample RPSL code
+node Upscale ([readwrite(rendertarget)] texture dest : SV_Target0,
+              [readonly(ps)]            texture source);
+
+// Render Graph entry point
+export void hello_rpsl([readonly(present)] texture backBuffer)
+{
+    // Declare a transient texture resource
+    const ResourceDesc backBufferDesc = backBuffer.desc();
+    texture offscreen = create_tex2d(backBufferDesc.Format, uint(backBufferDesc.Width) / 10, uint(backBufferDesc.Height) / 10);
+
+    // Built-in clear node
+    clear(offscreen, float4(0.0, 0.2, 0.4, 1.0));
+
+    // Render to offscreen texture with user defined "Triangle" node
+    Triangle(offscreen);
+
+    // Blt offscreen to backbuffer with user defined "Upscale" node
+    Upscale(backBuffer, offscreen);
+}

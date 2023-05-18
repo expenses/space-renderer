@@ -1,0 +1,50 @@
+#include "bloom.rpsl"
+
+node draw(rtv rt : SV_Target0, texture ds : SV_DepthStencil);
+
+node depth_prepass(texture ds : SV_DepthStencil);
+
+node tonemap(
+    [readwrite(cs)] texture hdr
+);
+
+node blit(
+    [readonly(ps)] texture source,
+    [writeonly(rendertarget)] texture dest
+);
+
+node linearize_depth(
+    [readonly(cs)] texture source,
+    [writeonly(cs)] texture output
+);
+
+node render_skybox(
+    rtv rt : SV_Target0, texture ds : SV_DepthStencil
+);
+
+// Render Graph entry point
+export void hello_rpsl([readonly(present)] texture backBuffer)
+{
+    FilterConstants bloom_constants;
+    bloom_constants.threshold = 1.25;
+    bloom_constants.knee = 1.25;
+
+    const ResourceDesc backBufferDesc = backBuffer.desc();
+    
+    texture ds = create_tex2d(RPS_FORMAT_D32_FLOAT, backBufferDesc.Width, backBufferDesc.Height);
+    texture hdr = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, backBufferDesc.Width, backBufferDesc.Height);
+    
+    clear_depth(ds, 0.0);
+    clear_color(hdr, float4(0.0, 0.0, 0.0, 1.0));
+    depth_prepass(ds);
+    draw(hdr, ds);
+    render_skybox(hdr, ds);
+
+    //texture hdr_dof = create_tex2d(RPS_FORMAT_R16_FLOAT, backBufferDesc.Width / 2, backBufferDesc.Height / 2);
+    //linearize_depth(ds, hdr_dof);
+
+    compute_bloom_from_hdr(hdr, bloom_constants);
+
+    tonemap(hdr);
+    blit(hdr, backBuffer);   
+}

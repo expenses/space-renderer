@@ -1,0 +1,53 @@
+#include "../shared.hlsl"
+
+uint bloom_mips_for_dimensions(uint width, uint height) {
+    uint mips = 1;
+    uint smallest_mip = 2;
+
+    while(min(width, height) >> (mips + smallest_mip) > 0) {
+        mips ++;
+    }
+
+    return mips;
+}
+
+node downsample_initial(
+    [readonly(cs)] texture hdr,
+    [writeonly(cs)] texture bloom_texture,
+    FilterConstants constants
+);
+
+node downsample(
+    [readonly(cs)] texture source,
+    [writeonly(cs)] texture dest
+);
+
+node upsample(
+    [readonly(cs)] texture source,
+    [readwrite(cs)] texture dest
+);
+
+void compute_bloom_from_hdr(
+    texture hdr,
+    FilterConstants constants
+) {
+    const ResourceDesc hdr_desc = hdr.desc();
+    uint num_mips = bloom_mips_for_dimensions(hdr_desc.Width / 2, hdr_desc.Height / 2);  
+    texture bloom_tex = create_tex2d(
+        hdr_desc.Format,
+        hdr_desc.Width / 2, hdr_desc.Height / 2,
+        num_mips
+    );
+
+    downsample_initial(hdr, bloom_tex.mips(0), constants);
+
+    for (uint source_mip = 0; source_mip < num_mips - 1; source_mip++) {
+        downsample(bloom_tex.mips(source_mip), bloom_tex.mips(source_mip + 1));
+    }
+
+    for (uint source_mip = num_mips - 1; source_mip > 0; source_mip --) {
+        upsample(bloom_tex.mips(source_mip), bloom_tex.mips(source_mip - 1));
+    }
+
+    upsample(bloom_tex.mips(0), hdr);
+};

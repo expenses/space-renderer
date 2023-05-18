@@ -1,0 +1,33 @@
+[package]
+name = "space-renderer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pollster = "0.3.0"
+structopt = "0.3.26"
+wgpu = { version = "0.16.0", features = ["spirv"] }
+winit = "0.28.4"
+bytemuck = { version = "1.13.1", features = ["derive"] }
+gltf = "1.1.0"
+image = "0.24.6"
+glam = { version = "0.23.0", features = ["bytemuck"] }
+anyhow = "1.0.71"
+dolly = "0.4.1"
+libloading = "0.8.0"
+spirq = "0.6.3"
+spirv = "0.2.0"
+ktx2 = "0.3.0"
+zstd = "0.12.3"
+hassle-rs = "0.10.0"
+arc-swap = "1.6.0"
+log = "0.4.17"
+parking_lot = "0.12.1"
+range-alloc = { git = "https://github.com/expenses/gfx", rev = "6afbeb6d9733e295404f4fe0ac936591e277a26e" }
+goth-gltf = { git = "https://github.com/expenses/goth-gltf", version = "0.1.0" }
+rps-custom-backend = { path = "../rust-rps"}
+render-pipeline-shaders = { git = "https://github.com/expenses/render-pipeline-shaders-rs", branch = "changes", default-features=false }
+url = "2.3.1"
+base64 = "0.21.0"
