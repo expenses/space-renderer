@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 
 pub fn load_ktx2(bytes: &[u8], device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Texture {
@@ -5,17 +6,28 @@ pub fn load_ktx2(bytes: &[u8], device: &wgpu::Device, queue: &wgpu::Queue) -> wg
 
     let header = reader.header();
 
-    dbg!(header);
+    let mut bytes = vec![
+        0;
+        reader
+            .levels()
+            .map(|level| level.uncompressed_byte_length as usize)
+            .sum()
+    ];
+    let mut offset = 0;
 
-    let mut layers: Vec<u8> = reader.levels().flat_map(|level| {
+    for level in reader.levels() {
         match header.supercompression_scheme {
-            Some(ktx2::SupercompressionScheme::Zstandard) => zstd::stream::decode_all(level).unwrap(),
-            None => level.to_vec(),
-            other => panic!("{:?}", other)
+            Some(ktx2::SupercompressionScheme::Zstandard) => {
+                zstd::bulk::decompress_to_buffer(level.data, &mut bytes[offset..]).unwrap();
+            }
+            None => bytes[offset..level.data.len()].copy_from_slice(&level.data),
+            other => panic!("{:?}", other),
         }
-    }).collect();
+        offset += level.uncompressed_byte_length as usize;
+    }
 
-    device.create_texture_with_data(&queue,
+    device.create_texture_with_data(
+        &queue,
         &wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
@@ -33,11 +45,12 @@ pub fn load_ktx2(bytes: &[u8], device: &wgpu::Device, queue: &wgpu::Queue) -> wg
             format: match header.format.unwrap() {
                 ktx2::Format::E5B9G9R9_UFLOAT_PACK32 => wgpu::TextureFormat::Rgb9e5Ufloat,
                 ktx2::Format::R8G8B8A8_SRGB => wgpu::TextureFormat::Rgba8UnormSrgb,
-                other => panic!("{:?}", other)
+                ktx2::Format::R8G8B8A8_UNORM => wgpu::TextureFormat::Rgba8Unorm,
+                other => panic!("{:?}", other),
             },
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[]
+            view_formats: &[],
         },
-        &layers
+        &bytes,
     )
 }

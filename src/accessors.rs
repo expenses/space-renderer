@@ -1,9 +1,9 @@
 use glam::{UVec4, Vec2, Vec3, Vec4};
 //use gltf_helpers::Extensions;
+use goth_gltf::default_extensions::Extensions;
 use goth_gltf::ComponentType;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use goth_gltf::default_extensions::Extensions;
 
 fn unsigned_short_to_float(short: u16) -> f32 {
     short as f32 / 65535.0

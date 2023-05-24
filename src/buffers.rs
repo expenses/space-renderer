@@ -267,6 +267,7 @@ pub struct RawVertexBuffers<T> {
     pub position: T,
     pub normal: T,
     pub uv: T,
+    pub material_id: T,
 }
 
 impl RawVertexBuffers<ArcSwap<wgpu::Buffer>> {
@@ -275,6 +276,7 @@ impl RawVertexBuffers<ArcSwap<wgpu::Buffer>> {
             position: self.position.load(),
             normal: self.normal.load(),
             uv: self.uv.load(),
+            material_id: self.material_id.load(),
         }
     }
 }
@@ -307,6 +309,12 @@ impl VertexBuffers {
                     capacity,
                     size_of::<Vec2>(),
                 )),
+                material_id: ArcSwap::from(create_buffer(
+                    device,
+                    "material id buffer",
+                    capacity,
+                    size_of::<u32>(),
+                )),
             },
         }
     }
@@ -317,6 +325,7 @@ impl VertexBuffers {
         positions: &[Vec3],
         normals: &[Vec3],
         uvs: &[Vec2],
+        material_ids: &[u32],
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         command_encoder: &mut wgpu::CommandEncoder,
@@ -325,6 +334,7 @@ impl VertexBuffers {
 
         debug_assert_eq!(positions.len(), normals.len());
         debug_assert_eq!(positions.len(), uvs.len());
+        debug_assert_eq!(positions.len(), material_ids.len());
 
         let (buffers, range) = {
             let mut allocator = self.allocator.lock();
@@ -335,6 +345,7 @@ impl VertexBuffers {
                         position: self.buffers.position.load_full(),
                         normal: self.buffers.normal.load_full(),
                         uv: self.buffers.uv.load_full(),
+                        material_id: self.buffers.material_id.load_full(),
                     };
 
                     (buffers, range)
@@ -371,6 +382,12 @@ impl VertexBuffers {
             bytemuck::cast_slice(uvs),
         );
 
+        queue.write_buffer(
+            &buffers.material_id,
+            size_in_bytes(range.start, size_of::<u32>()),
+            bytemuck::cast_slice(material_ids),
+        );
+
         range
     }
 
@@ -403,6 +420,12 @@ impl VertexBuffers {
             position: create_buffer(device, "position buffer", new_capacity, size_of::<Vec3>()),
             normal: create_buffer(device, "normal buffer", new_capacity, size_of::<Vec3>()),
             uv: create_buffer(device, "uv buffer", new_capacity, size_of::<Vec2>()),
+            material_id: create_buffer(
+                device,
+                "material id buffer",
+                new_capacity,
+                size_of::<u32>(),
+            ),
         };
 
         let current_buffers = buffers.load();
@@ -428,9 +451,17 @@ impl VertexBuffers {
             0,
             size_in_bytes(copy_range, size_of::<Vec2>()),
         );
+        command_encoder.copy_buffer_to_buffer(
+            &current_buffers.material_id,
+            0,
+            &new_buffers.material_id,
+            0,
+            size_in_bytes(copy_range, size_of::<u32>()),
+        );
         buffers.position.store(new_buffers.position.clone());
         buffers.normal.store(new_buffers.normal.clone());
         buffers.uv.store(new_buffers.uv.clone());
+        buffers.material_id.store(new_buffers.material_id.clone());
 
         new_buffers
     }

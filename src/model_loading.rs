@@ -1,11 +1,28 @@
-use wgpu::util::DeviceExt;
-use glam::{Vec2, Vec3};
-use std::ops::Range;
-use crate::buffers;
 use crate::accessors::PrimitiveReader;
-use std::collections::HashMap;
-use goth_gltf::default_extensions::Extensions;
+use crate::bindless_textures::BindlessTextures;
+use crate::buffers;
+use crate::buffers::VecGpuBuffer;
+use crate::texture_loading::load_ktx2;
 use base64::Engine;
+use glam::{Vec2, Vec3, Vec4};
+use goth_gltf::default_extensions::Extensions;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::collections::HashMap;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use wgpu::util::DeviceExt;
+
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+#[repr(C)]
+pub struct MaterialInfo {
+    pub base_color_factor: Vec4,
+    pub emissive_factor: Vec3,
+    pub metallic_factor: f32,
+    pub roughness_factor: f32,
+    pub albedo_texture: u32,
+    pub normal_texture: u32,
+    pub emissive_texture: u32,
+}
 
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -14,8 +31,8 @@ pub struct Vertex {
     pub uv: Vec2,
 }
 
-
 fn collect_buffer_view_map(
+    path: &std::path::Path,
     gltf: &goth_gltf::Gltf<Extensions>,
     glb_buffer: Option<&[u8]>,
 ) -> anyhow::Result<HashMap<usize, Vec<u8>>> {
@@ -43,11 +60,8 @@ fn collect_buffer_view_map(
             None => continue,
         };
 
-        let url = url::Url::options().base_url(/*Some(root_url)*/None).parse(uri)?;
-
-        if url.scheme() == "data" {
-            let (_mime_type, data) = url
-                .path()
+        if uri.starts_with("data") {
+            let (_mime_type, data) = uri
                 .split_once(',')
                 .ok_or_else(|| anyhow::anyhow!("Failed to get data uri split"))?;
             log::warn!("Loading buffers from embedded base64 is inefficient. Consider moving the buffers into a seperate file.");
@@ -56,11 +70,9 @@ fn collect_buffer_view_map(
                 Cow::Owned(base64::engine::general_purpose::STANDARD.decode(data)?),
             );
         } else {
-            /*buffer_map.insert(
-                index,
-                Cow::Owned(context.http_client.fetch_bytes(&url, None).await?),
-            );*/
-            panic!()
+            let mut path = std::path::PathBuf::from(path);
+            path.set_file_name(uri);
+            buffer_map.insert(index, Cow::Owned(std::fs::read(&path).unwrap()));
         }
     }
 
@@ -79,29 +91,98 @@ fn collect_buffer_view_map(
     Ok(buffer_view_map)
 }
 
-pub fn load_gltf_from_bytes(
-    bytes: &[u8],
+pub struct Model {
+    pub indices: Range<u32>,
+    pub vertices: Range<u32>,
+    pub textures: Range<u32>,
+    pub material_infos: Range<u32>,
+}
+
+pub fn load_gltf<P: std::convert::AsRef<std::path::Path> + Sync>(
+    path: P,
     vertex_buffers: &buffers::VertexBuffers,
     index_buffer: &buffers::IndexBuffer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> anyhow::Result<(Range<u32>, Range<u32>, wgpu::TextureView)> {
+    bindless_textures: &mut BindlessTextures,
+    material_info_buffer: &mut VecGpuBuffer<MaterialInfo>,
+) -> anyhow::Result<Model> {
+    let bytes = std::fs::read(path.as_ref()).unwrap();
+
     let (gltf, glb_buffer) = goth_gltf::Gltf::from_bytes(&bytes)?;
     //let node_tree = gltf_helpers::NodeTree::new(&gltf);
 
-
     //let buffer_blob = gltf.blob.as_ref().unwrap();
 
-    let mut buffer_view_map = collect_buffer_view_map(&gltf, glb_buffer).unwrap();
+    let mut buffer_view_map = collect_buffer_view_map(path.as_ref(), &gltf, glb_buffer).unwrap();
+
+    let texture_views = gltf
+        .images
+        .par_iter()
+        .map(|image| {
+            if let Some(uri) = &image.uri {
+                let mut path = PathBuf::from(path.as_ref());
+                path.set_file_name(uri);
+                load_ktx2(&std::fs::read(&path).unwrap(), device, queue)
+                    .create_view(&Default::default())
+            } else {
+                panic!()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let textures_range = bindless_textures.push(texture_views);
+
+    let first_texture = textures_range.start;
+
+    let mut material_infos = Vec::new();
+
+    for material in &gltf.materials {
+        material_infos.push(MaterialInfo {
+            base_color_factor: material.pbr_metallic_roughness.base_color_factor.into(),
+            albedo_texture: material
+                .pbr_metallic_roughness
+                .base_color_texture
+                .as_ref()
+                .map(|info| first_texture + info.index as u32)
+                .unwrap_or(u32::max_value()),
+            metallic_factor: material.pbr_metallic_roughness.metallic_factor,
+            roughness_factor: material.pbr_metallic_roughness.roughness_factor,
+            normal_texture: material
+                .normal_texture
+                .as_ref()
+                .map(|info| first_texture + info.index as u32)
+                .unwrap_or(u32::max_value()),
+            emissive_factor: Vec3::from(material.emissive_factor)
+                * material
+                    .extensions
+                    .khr_materials_emissive_strength
+                    .map(|ext| ext.emissive_strength)
+                    .unwrap_or(1.0),
+            emissive_texture: material
+                .emissive_texture
+                .as_ref()
+                .map(|info| first_texture + info.index as u32)
+                .unwrap_or(u32::max_value()),
+        });
+    }
+
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+    let material_info_range =
+        material_info_buffer.push(&material_infos, &device, &queue, &mut encoder);
 
     let mut indices = Vec::new();
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     let mut uvs = Vec::new();
+    let mut material_ids = Vec::new();
 
     for mesh in &gltf.meshes {
-
         for primitive in &mesh.primitives {
+            let material_id = primitive.material.unwrap_or(0);
+
             let reader = PrimitiveReader::new(&gltf, primitive, &buffer_view_map);
 
             let read_indices = reader.read_indices().unwrap().unwrap();
@@ -110,65 +191,41 @@ pub fn load_gltf_from_bytes(
 
             indices.extend(read_indices.iter().map(|index| index + num_vertices));
 
-            positions.extend_from_slice(&reader.read_positions().unwrap().unwrap());
+            let prim_positions = reader.read_positions().unwrap().unwrap();
+
+            positions.extend_from_slice(&prim_positions);
             uvs.extend_from_slice(&reader.read_uvs().unwrap().unwrap());
             normals.extend_from_slice(&reader.read_normals().unwrap().unwrap());
-            
+            material_ids.extend(
+                std::iter::repeat(material_info_range.start + material_id as u32)
+                    .take(prim_positions.len()),
+            );
         }
     }
 
-    for image in &gltf.images {
-        if let Some(buffer_view) = image.buffer_view {
-            
-        }
-        dbg!(image);
-    }
-
-    let mut encoder = device.create_command_encoder(
-        &wgpu::CommandEncoderDescriptor { label: None },
+    let vertex_range = vertex_buffers.insert(
+        &positions,
+        &normals,
+        &uvs,
+        &material_ids,
+        device,
+        queue,
+        &mut encoder,
     );
-
-    let vertex_range = vertex_buffers.insert(&positions, &normals, &uvs, device, queue, &mut encoder);
     for mut index in &mut indices {
         *index += vertex_range.start;
     }
 
     let index_range = index_buffer.insert(&indices, device, queue, &mut encoder);
 
-    dbg!(&vertex_range, &index_range);
-
     queue.submit(Some(encoder.finish()));
 
-    //let material = gltf.materials().next().unwrap();
-
-    let texture = /*if let Some(texture) = material.emissive_texture() {*/ 
-/*
-        load_texture_from_gltf(
-            texture.texture(),
-            "emissive texture",
-            buffer_blob,
-            device,
-            queue,
-        )?
-    } else {
-        */
-        device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        }).create_view(&Default::default())/*
-    }*/;
-
-    Ok((vertex_range, index_range, texture))
+    Ok(Model {
+        indices: index_range,
+        vertices: vertex_range,
+        textures: textures_range,
+        material_infos: material_info_range,
+    })
 }
 
 /*

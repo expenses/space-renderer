@@ -7,7 +7,5 @@ void tonemap(
     uint3 id: SV_DispatchThreadID
 ) {
     float3 value = hdr_tex[id.xy].xyz;
-    float bump = 1;
-    value *= bump;
     hdr_tex[id.xy].xyz = tony_mc_mapface(value);
 }

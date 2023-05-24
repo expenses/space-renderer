@@ -19,7 +19,7 @@ dolly = "0.4.1"
 libloading = "0.8.0"
 spirq = "0.6.3"
 spirv = "0.2.0"
-ktx2 = "0.3.0"
+ktx2 = { git = "https://github.com/BVE-Reborn/ktx2"}
 zstd = "0.12.3"
 hassle-rs = "0.10.0"
 arc-swap = "1.6.0"
@@ -29,5 +29,8 @@ range-alloc = { git = "https://github.com/expenses/gfx", rev = "6afbeb6d9733e295
 goth-gltf = { git = "https://github.com/expenses/goth-gltf", version = "0.1.0" }
 rps-custom-backend = { path = "../rust-rps"}
 render-pipeline-shaders = { git = "https://github.com/expenses/render-pipeline-shaders-rs", branch = "changes", default-features=false }
-url = "2.3.1"
 base64 = "0.21.0"
+egui_winit_platform = "0.18.0"
+egui_wgpu_backend = "0.23.0"
+egui = "0.21.0"
+rayon = "1.7.0"

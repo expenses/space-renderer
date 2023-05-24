@@ -1,0 +1,33 @@
+{
+    "rdocCaptureSettings": 1,
+    "settings": {
+        "autoStart": false,
+        "commandLine": "shaders/pipeline/3d.so hello_rpsl",
+        "environment": [
+            {
+                "separator": "Platform style",
+                "type": "Set",
+                "value": "x11",
+                "variable": "WINIT_UNIX_BACKEND"
+            }
+        ],
+        "executable": "/home/ashley/projects/space-renderer/target/release/space-renderer",
+        "inject": false,
+        "numQueuedFrames": 0,
+        "options": {
+            "allowFullscreen": true,
+            "allowVSync": true,
+            "apiValidation": false,
+            "captureAllCmdLists": false,
+            "captureCallstacks": false,
+            "captureCallstacksOnlyDraws": false,
+            "debugOutputMute": true,
+            "delayForDebugger": 0,
+            "hookIntoChildren": false,
+            "refAllResources": false,
+            "verifyBufferAccess": false
+        },
+        "queuedFrameCap": 0,
+        "workingDir": "/home/ashley/projects/space-renderer"
+    }
+}

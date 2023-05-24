@@ -13,8 +13,7 @@ uint bloom_mips_for_dimensions(uint width, uint height) {
 
 node downsample_initial(
     [readonly(cs)] texture hdr,
-    [writeonly(cs)] texture bloom_texture,
-    FilterConstants constants
+    [writeonly(cs)] texture bloom_texture
 );
 
 node downsample(
@@ -28,8 +27,7 @@ node upsample(
 );
 
 void compute_bloom_from_hdr(
-    texture hdr,
-    FilterConstants constants
+    texture hdr
 ) {
     const ResourceDesc hdr_desc = hdr.desc();
     uint num_mips = bloom_mips_for_dimensions(hdr_desc.Width / 2, hdr_desc.Height / 2);  
@@ -39,7 +37,7 @@ void compute_bloom_from_hdr(
         num_mips
     );
 
-    downsample_initial(hdr, bloom_tex.mips(0), constants);
+    downsample_initial(hdr, bloom_tex.mips(0));
 
     for (uint source_mip = 0; source_mip < num_mips - 1; source_mip++) {
         downsample(bloom_tex.mips(source_mip), bloom_tex.mips(source_mip + 1));

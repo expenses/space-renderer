@@ -1,4 +1,9 @@
 struct PushConstant {
+    float boost;
+};
+
+[[vk::binding(2)]]
+cbuffer Matrices {
     float4x4 projection_inverse;
     float4x4 view;
 };
@@ -22,8 +27,8 @@ Varying VSMain(
         1.0
     );
 
-    float4 unprojected = mul(constant.projection_inverse, pos);
-    float3 ray = mul(constant.view, float4(unprojected.xyz, 1.0)).xyz; 
+    float4 unprojected = mul(projection_inverse, pos);
+    float3 ray = mul(view, float4(unprojected.xyz, 1.0)).xyz; 
 
     Varying output;
     output.position = pos;
@@ -38,5 +43,5 @@ Varying VSMain(
 float4 PSMain(
     float3 ray: TEXCOORD0
 ): SV_Target0 {
-    return float4(tex.Sample(samp, ray) * 32, 1.0);
+    return float4(tex.Sample(samp, ray) * constant.boost, 1.0);
 }
