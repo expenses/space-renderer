@@ -77,7 +77,8 @@ pub unsafe extern "C" fn create_resources(
                 }
 
                 if access_flags.contains(AccessFlags::UNORDERED_ACCESS) {
-                    usage |= wgpu::TextureUsages::STORAGE_BINDING;
+                    usage |=
+                        wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING;
                 }
 
                 if usage.is_empty() {
@@ -92,7 +93,7 @@ pub unsafe extern "C" fn create_resources(
                     size: wgpu::Extent3d {
                         width: image.width,
                         height: image.height,
-                        depth_or_array_layers: 1,
+                        depth_or_array_layers: image.depth_array_layers.depth,
                     },
                     mip_level_count: image.mipLevels(),
                     sample_count: image.sampleCount(),

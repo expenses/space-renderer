@@ -39,6 +39,22 @@ impl<'a> ShaderSource<'a> {
     }
 }
 
+fn load_shader_from_bytes(device: &wgpu::Device, bytes: &[u8], raw: bool) -> wgpu::ShaderModule {
+    if raw {
+        unsafe {
+            device.create_shader_module_spirv(&wgpu::ShaderModuleDescriptorSpirV {
+                label: None,
+                source: wgpu::util::make_spirv_raw(bytes),
+            })
+        }
+    } else {
+        device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::util::make_spirv(bytes),
+        })
+    }
+}
+
 pub struct BindGroupLayouts {
     inner: std::collections::BTreeMap<u32, (wgpu::BindGroupLayout, HashSet<u32>)>,
 }
@@ -98,6 +114,7 @@ impl ComputePipeline {
         shader: &ShaderSource,
         entry_point: &str,
         reflection_settings: &reflection::ReflectionSettings,
+        raw_spirv: bool,
     ) -> Self {
         let shader_bytes = shader.load(entry_point, "cs_6_0");
 
@@ -127,12 +144,7 @@ impl ComputePipeline {
             pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(shader.as_str()),
                 layout: Some(&pipeline_layout),
-                module: &unsafe {
-                    device.create_shader_module_spirv(&wgpu::ShaderModuleDescriptorSpirV {
-                        label: None,
-                        source: wgpu::util::make_spirv_raw(&shader_bytes),
-                    })
-                },
+                module: &load_shader_from_bytes(device, &shader_bytes, raw_spirv),
                 entry_point,
             }),
         }
@@ -153,6 +165,7 @@ impl RenderPipeline {
         targets: &[Option<wgpu::ColorTargetState>],
         depth_stencil: Option<wgpu::DepthStencilState>,
         vertex_buffer_layouts: &[wgpu::VertexBufferLayout],
+        raw_spirv: bool,
     ) -> Self {
         let vertex_shader_bytes = shader.load(vertex_entry_point, "vs_6_0");
         let fragment_shader_bytes = shader.load(fragment_entry_point, "ps_6_0");
@@ -192,22 +205,12 @@ impl RenderPipeline {
                 label: Some(&shader.as_str()),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &unsafe {
-                        device.create_shader_module_spirv(&wgpu::ShaderModuleDescriptorSpirV {
-                            label: None,
-                            source: wgpu::util::make_spirv_raw(&vertex_shader_bytes),
-                        })
-                    },
+                    module: &load_shader_from_bytes(device, &vertex_shader_bytes, raw_spirv),
                     entry_point: vertex_entry_point,
                     buffers: vertex_buffer_layouts,
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &unsafe {
-                        device.create_shader_module_spirv(&wgpu::ShaderModuleDescriptorSpirV {
-                            label: None,
-                            source: wgpu::util::make_spirv_raw(&fragment_shader_bytes),
-                        })
-                    },
+                    module: &load_shader_from_bytes(device, &fragment_shader_bytes, raw_spirv),
                     entry_point: fragment_entry_point,
                     targets,
                 }),

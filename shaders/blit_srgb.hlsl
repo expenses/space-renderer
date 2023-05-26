@@ -5,8 +5,6 @@ struct V2P
     float2 Uv : COLOR0;
 };
 
-#define PI (3.14159f)
-
 [shader("vertex")]
 V2P VSMain(uint vId : SV_VertexID)
 {

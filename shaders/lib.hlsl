@@ -9,7 +9,7 @@
 // . . . . . . .
 // These samples are interpreted as 4 overlapping boxes
 // plus a center box.
-float3 sample_13_tap_box_filter(Texture2D<float3> texture, float2 uv, float2 texel_size) {
+float3 sample_13_tap_box_filter(Texture2D<float3> texture, SamplerState samp, float2 uv, float2 texel_size) {
     float3 a = texture.SampleLevel(samp, uv + texel_size * float2(-1, -1), 0);
     float3 b = texture.SampleLevel(samp, uv + texel_size * float2(0, -1), 0);
     float3 c = texture.SampleLevel(samp, uv + texel_size * float2(1, -1), 0);
@@ -44,7 +44,7 @@ float3 sample_13_tap_box_filter(Texture2D<float3> texture, float2 uv, float2 tex
 // 1/16 * d*2 e*4 f*2
 //        g*1 h*2 i*1
 float3 sample_3x3_tent_filter(
-    Texture2D<float3> texture, float2 uv, float2 texel_size
+    Texture2D<float3> texture, SamplerState samp, float2 uv, float2 texel_size
 ) {
     float3 a = texture.SampleLevel(samp, uv + texel_size * float2(-1, -1), 0);
     float3 b = texture.SampleLevel(samp, uv + texel_size * float2(0, -1), 0);

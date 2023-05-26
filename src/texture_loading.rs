@@ -26,6 +26,27 @@ pub fn load_ktx2(bytes: &[u8], device: &wgpu::Device, queue: &wgpu::Queue) -> wg
         offset += level.uncompressed_byte_length as usize;
     }
 
+    // Swizzle bytes from being like (F = face, M = mip) F0M0 F1M0.. to being F0M0 F0M1..
+    // todo: could do this inline possibly?
+    if header.face_count == 6 {
+        let mut swizzled_bytes = Vec::with_capacity(bytes.len());
+        for i in 0..6 {
+            let mut offset = 0;
+
+            for level in reader.levels() {
+                let face_length = level.uncompressed_byte_length as usize / 6;
+
+                swizzled_bytes.extend_from_slice(
+                    &bytes[offset + i * face_length..offset + (i + 1) * face_length],
+                );
+
+                offset += level.uncompressed_byte_length as usize;
+            }
+        }
+
+        bytes = swizzled_bytes;
+    }
+
     device.create_texture_with_data(
         &queue,
         &wgpu::TextureDescriptor {

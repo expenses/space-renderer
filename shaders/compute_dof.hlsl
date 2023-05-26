@@ -1,11 +1,13 @@
+#include "shared.hlsl"
+
 [[vk::binding(0)]] Texture2D<float> depth_tex;
 [[vk::binding(1)]] SamplerState samp;
 [[vk::binding(2)]] Texture2D<float3> hdr_tex;
 [[vk::binding(3), vk::image_format("rgba16f")]] RWTexture2D<float4> output_tex; 
 
 static const float GOLDEN_ANGLE = 2.39996323; 
-static const float MAX_BLUR_SIZE = 10.0; 
-static const float RAD_SCALE = 0.25; // Smaller = nicer blur, larger = faster
+static const float MAX_BLUR_SIZE = 20.0; 
+static const float RAD_SCALE = 3.0; // Smaller = nicer blur, larger = faster
 
 float getBlurSize(float depth, float focusPoint, float focusScale)
 {
@@ -14,13 +16,16 @@ float getBlurSize(float depth, float focusPoint, float focusScale)
 }
 
 [numthreads(8, 8, 1)]
-void linearize_depth(
+void compute_dof(
     uint3 id: SV_DispatchThreadID
 ) {
-    float width;
-    float height;
-    output_tex.GetDimensions(width, height);
-    float2 texel_size = 1.0 / float2(width, height);
+    uint2 output_size = texture_size(output_tex);
+
+    if (!(id.x < output_size.x && id.y < output_size.y)) {
+        return;
+    }
+
+    float2 texel_size = 1.0 / float2(output_size);
     float2 uv = (float2(id.xy) + 0.5) * texel_size;
 
     // https://www.reddit.com/r/GraphicsProgramming/comments/f9zwin/linearising_reverse_depth_buffer/fix7ifb/

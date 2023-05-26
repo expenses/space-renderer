@@ -1,11 +1,12 @@
 use spirq::ty::ImageFormat;
 use std::collections::{BTreeMap, HashMap};
 
-fn map_dim(dim: spirv::Dim) -> wgpu::TextureViewDimension {
-    match dim {
-        spirv::Dim::Dim2D => wgpu::TextureViewDimension::D2,
-        spirv::Dim::Dim3D => wgpu::TextureViewDimension::D3,
-        spirv::Dim::DimCube => wgpu::TextureViewDimension::Cube,
+fn map_dim(dim: spirv::Dim, is_array: bool) -> wgpu::TextureViewDimension {
+    match (dim, is_array) {
+        (spirv::Dim::Dim2D, true) => wgpu::TextureViewDimension::D2Array,
+        (spirv::Dim::Dim2D, _) => wgpu::TextureViewDimension::D2,
+        (spirv::Dim::Dim3D, _) => wgpu::TextureViewDimension::D3,
+        (spirv::Dim::DimCube, _) => wgpu::TextureViewDimension::Cube,
         other => panic!("{:?}", other),
     }
 }
@@ -85,16 +86,18 @@ pub fn reflect(bytes: &[u8], settings: &ReflectionSettings) -> Reflection {
                                         },
                                         other => panic!("{:?}", other),
                                     },
-                                    view_dimension: map_dim(ty.dim),
+                                    view_dimension: map_dim(ty.dim, ty.is_array),
                                 },
                                 (
                                     spirq::ty::Type::StorageImage(ty),
                                     spirq::reflect::DescriptorType::StorageImage(access),
                                 ) => wgpu::BindingType::StorageTexture {
-                                    view_dimension: map_dim(ty.dim),
+                                    view_dimension: map_dim(ty.dim, ty.is_array),
                                     format: match ty.fmt {
                                         ImageFormat::Rgba16f => wgpu::TextureFormat::Rgba16Float,
                                         ImageFormat::R16f => wgpu::TextureFormat::R16Float,
+                                        ImageFormat::Rg16f => wgpu::TextureFormat::Rg16Float,
+                                        ImageFormat::Rgba32f => wgpu::TextureFormat::Rgba32Float,
                                         other => panic!("{:?}", other),
                                     },
                                     access: match access {

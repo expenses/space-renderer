@@ -12,49 +12,70 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+THE SOFTWARE. 
 **/
 static const uint KERNEL_RADIUS = 8;
 static const uint KERNEL_COUNT = 17;
-static const float4 Kernel0BracketsRealXY_ImZW = float4(-0.038708,0.943062,-0.025574,0.660892);
-static const float2 Kernel0Weights_RealX_ImY = float2(0.411259,-0.548794);
+static const float4 Kernel0BracketsRealXY_ImZW = float4(-0.018239,0.633946,-0.009345,0.366969);
+static const float2 Kernel0Weights_RealX_ImY = float2(1.621035,-2.105439);
 static const float4 Kernel0_RealX_ImY_RealZ_ImW[] = {
-	float4(/*XY: Non Bracketed*/0.014096,-0.022658,/*Bracketed WZ:*/0.055991,0.004413),
-	float4(/*XY: Non Bracketed*/-0.020612,-0.025574,/*Bracketed WZ:*/0.019188,0.000000),
-	float4(/*XY: Non Bracketed*/-0.038708,0.006957,/*Bracketed WZ:*/0.000000,0.049223),
-	float4(/*XY: Non Bracketed*/-0.021449,0.040468,/*Bracketed WZ:*/0.018301,0.099929),
-	float4(/*XY: Non Bracketed*/0.013015,0.050223,/*Bracketed WZ:*/0.054845,0.114689),
-	float4(/*XY: Non Bracketed*/0.042178,0.038585,/*Bracketed WZ:*/0.085769,0.097080),
-	float4(/*XY: Non Bracketed*/0.057972,0.019812,/*Bracketed WZ:*/0.102517,0.068674),
-	float4(/*XY: Non Bracketed*/0.063647,0.005252,/*Bracketed WZ:*/0.108535,0.046643),
-	float4(/*XY: Non Bracketed*/0.064754,0.000000,/*Bracketed WZ:*/0.109709,0.038697),
-	float4(/*XY: Non Bracketed*/0.063647,0.005252,/*Bracketed WZ:*/0.108535,0.046643),
-	float4(/*XY: Non Bracketed*/0.057972,0.019812,/*Bracketed WZ:*/0.102517,0.068674),
-	float4(/*XY: Non Bracketed*/0.042178,0.038585,/*Bracketed WZ:*/0.085769,0.097080),
-	float4(/*XY: Non Bracketed*/0.013015,0.050223,/*Bracketed WZ:*/0.054845,0.114689),
-	float4(/*XY: Non Bracketed*/-0.021449,0.040468,/*Bracketed WZ:*/0.018301,0.099929),
-	float4(/*XY: Non Bracketed*/-0.038708,0.006957,/*Bracketed WZ:*/0.000000,0.049223),
-	float4(/*XY: Non Bracketed*/-0.020612,-0.025574,/*Bracketed WZ:*/0.019188,0.000000),
-	float4(/*XY: Non Bracketed*/0.014096,-0.022658,/*Bracketed WZ:*/0.055991,0.004413)
+	float4(/*XY: Non Bracketed*/0.004963,-0.000906,/*Bracketed WZ:*/0.036600,0.022997),
+	float4(/*XY: Non Bracketed*/-0.000375,-0.009345,/*Bracketed WZ:*/0.028180,0.000000),
+	float4(/*XY: Non Bracketed*/-0.015297,-0.004584,/*Bracketed WZ:*/0.004642,0.012976),
+	float4(/*XY: Non Bracketed*/-0.018239,0.017258,/*Bracketed WZ:*/0.000000,0.072494),
+	float4(/*XY: Non Bracketed*/0.001641,0.036328,/*Bracketed WZ:*/0.031360,0.124461),
+	float4(/*XY: Non Bracketed*/0.031713,0.036701,/*Bracketed WZ:*/0.078795,0.125477),
+	float4(/*XY: Non Bracketed*/0.055303,0.022179,/*Bracketed WZ:*/0.116007,0.085905),
+	float4(/*XY: Non Bracketed*/0.067107,0.006418,/*Bracketed WZ:*/0.134627,0.042956),
+	float4(/*XY: Non Bracketed*/0.070245,0.000000,/*Bracketed WZ:*/0.139577,0.025466),
+	float4(/*XY: Non Bracketed*/0.067107,0.006418,/*Bracketed WZ:*/0.134627,0.042956),
+	float4(/*XY: Non Bracketed*/0.055303,0.022179,/*Bracketed WZ:*/0.116007,0.085905),
+	float4(/*XY: Non Bracketed*/0.031713,0.036701,/*Bracketed WZ:*/0.078795,0.125477),
+	float4(/*XY: Non Bracketed*/0.001641,0.036328,/*Bracketed WZ:*/0.031360,0.124461),
+	float4(/*XY: Non Bracketed*/-0.018239,0.017258,/*Bracketed WZ:*/0.000000,0.072494),
+	float4(/*XY: Non Bracketed*/-0.015297,-0.004584,/*Bracketed WZ:*/0.004642,0.012976),
+	float4(/*XY: Non Bracketed*/-0.000375,-0.009345,/*Bracketed WZ:*/0.028180,0.000000),
+	float4(/*XY: Non Bracketed*/0.004963,-0.000906,/*Bracketed WZ:*/0.036600,0.022997)
 };
-static const float4 Kernel1BracketsRealXY_ImZW = float4(0.000115,0.559524,0.000000,0.178226);
-static const float2 Kernel1Weights_RealX_ImY = float2(0.513282,4.561110);
+static const float4 Kernel1BracketsRealXY_ImZW = float4(-0.047314,1.023326,-0.039155,0.849239);
+static const float2 Kernel1Weights_RealX_ImY = float2(-0.280860,-0.162882);
 static const float4 Kernel1_RealX_ImY_RealZ_ImW[] = {
-	float4(/*XY: Non Bracketed*/0.000115,0.009116,/*Bracketed WZ:*/0.000000,0.051147),
-	float4(/*XY: Non Bracketed*/0.005324,0.013416,/*Bracketed WZ:*/0.009311,0.075276),
-	float4(/*XY: Non Bracketed*/0.013753,0.016519,/*Bracketed WZ:*/0.024376,0.092685),
-	float4(/*XY: Non Bracketed*/0.024700,0.017215,/*Bracketed WZ:*/0.043940,0.096591),
-	float4(/*XY: Non Bracketed*/0.036693,0.015064,/*Bracketed WZ:*/0.065375,0.084521),
-	float4(/*XY: Non Bracketed*/0.047976,0.010684,/*Bracketed WZ:*/0.085539,0.059948),
-	float4(/*XY: Non Bracketed*/0.057015,0.005570,/*Bracketed WZ:*/0.101695,0.031254),
-	float4(/*XY: Non Bracketed*/0.062782,0.001529,/*Bracketed WZ:*/0.112002,0.008578),
-	float4(/*XY: Non Bracketed*/0.064754,0.000000,/*Bracketed WZ:*/0.115526,0.000000),
-	float4(/*XY: Non Bracketed*/0.062782,0.001529,/*Bracketed WZ:*/0.112002,0.008578),
-	float4(/*XY: Non Bracketed*/0.057015,0.005570,/*Bracketed WZ:*/0.101695,0.031254),
-	float4(/*XY: Non Bracketed*/0.047976,0.010684,/*Bracketed WZ:*/0.085539,0.059948),
-	float4(/*XY: Non Bracketed*/0.036693,0.015064,/*Bracketed WZ:*/0.065375,0.084521),
-	float4(/*XY: Non Bracketed*/0.024700,0.017215,/*Bracketed WZ:*/0.043940,0.096591),
-	float4(/*XY: Non Bracketed*/0.013753,0.016519,/*Bracketed WZ:*/0.024376,0.092685),
-	float4(/*XY: Non Bracketed*/0.005324,0.013416,/*Bracketed WZ:*/0.009311,0.075276),
-	float4(/*XY: Non Bracketed*/0.000115,0.009116,/*Bracketed WZ:*/0.000000,0.051147)
+	float4(/*XY: Non Bracketed*/-0.001475,-0.020410,/*Bracketed WZ:*/0.044794,0.022073),
+	float4(/*XY: Non Bracketed*/-0.013320,0.023855,/*Bracketed WZ:*/0.033219,0.074197),
+	float4(/*XY: Non Bracketed*/0.034763,-0.004855,/*Bracketed WZ:*/0.080207,0.040389),
+	float4(/*XY: Non Bracketed*/-0.018694,-0.039155,/*Bracketed WZ:*/0.027968,0.000000),
+	float4(/*XY: Non Bracketed*/-0.047314,0.020606,/*Bracketed WZ:*/0.000000,0.070371),
+	float4(/*XY: Non Bracketed*/0.002048,0.059024,/*Bracketed WZ:*/0.048238,0.115609),
+	float4(/*XY: Non Bracketed*/0.050457,0.041030,/*Bracketed WZ:*/0.095543,0.094420),
+	float4(/*XY: Non Bracketed*/0.067903,0.011703,/*Bracketed WZ:*/0.112591,0.059888),
+	float4(/*XY: Non Bracketed*/0.070245,0.000000,/*Bracketed WZ:*/0.114880,0.046107),
+	float4(/*XY: Non Bracketed*/0.067903,0.011703,/*Bracketed WZ:*/0.112591,0.059888),
+	float4(/*XY: Non Bracketed*/0.050457,0.041030,/*Bracketed WZ:*/0.095543,0.094420),
+	float4(/*XY: Non Bracketed*/0.002048,0.059024,/*Bracketed WZ:*/0.048238,0.115609),
+	float4(/*XY: Non Bracketed*/-0.047314,0.020606,/*Bracketed WZ:*/0.000000,0.070371),
+	float4(/*XY: Non Bracketed*/-0.018694,-0.039155,/*Bracketed WZ:*/0.027968,0.000000),
+	float4(/*XY: Non Bracketed*/0.034763,-0.004855,/*Bracketed WZ:*/0.080207,0.040389),
+	float4(/*XY: Non Bracketed*/-0.013320,0.023855,/*Bracketed WZ:*/0.033219,0.074197),
+	float4(/*XY: Non Bracketed*/-0.001475,-0.020410,/*Bracketed WZ:*/0.044794,0.022073)
+};
+static const float4 Kernel2BracketsRealXY_ImZW = float4(-0.000825,0.503006,0.000000,0.127340);
+static const float2 Kernel2Weights_RealX_ImY = float2(-0.366471,10.300301);
+static const float4 Kernel2_RealX_ImY_RealZ_ImW[] = {
+	float4(/*XY: Non Bracketed*/-0.000825,0.002179,/*Bracketed WZ:*/0.000000,0.017109),
+	float4(/*XY: Non Bracketed*/0.000471,0.005155,/*Bracketed WZ:*/0.002576,0.040480),
+	float4(/*XY: Non Bracketed*/0.004808,0.009153,/*Bracketed WZ:*/0.011198,0.071882),
+	float4(/*XY: Non Bracketed*/0.013523,0.012724,/*Bracketed WZ:*/0.028523,0.099918),
+	float4(/*XY: Non Bracketed*/0.026545,0.013927,/*Bracketed WZ:*/0.054413,0.109368),
+	float4(/*XY: Non Bracketed*/0.041913,0.011680,/*Bracketed WZ:*/0.084964,0.091725),
+	float4(/*XY: Non Bracketed*/0.056361,0.006841,/*Bracketed WZ:*/0.113689,0.053726),
+	float4(/*XY: Non Bracketed*/0.066574,0.002011,/*Bracketed WZ:*/0.133992,0.015793),
+	float4(/*XY: Non Bracketed*/0.070245,0.000000,/*Bracketed WZ:*/0.141290,0.000000),
+	float4(/*XY: Non Bracketed*/0.066574,0.002011,/*Bracketed WZ:*/0.133992,0.015793),
+	float4(/*XY: Non Bracketed*/0.056361,0.006841,/*Bracketed WZ:*/0.113689,0.053726),
+	float4(/*XY: Non Bracketed*/0.041913,0.011680,/*Bracketed WZ:*/0.084964,0.091725),
+	float4(/*XY: Non Bracketed*/0.026545,0.013927,/*Bracketed WZ:*/0.054413,0.109368),
+	float4(/*XY: Non Bracketed*/0.013523,0.012724,/*Bracketed WZ:*/0.028523,0.099918),
+	float4(/*XY: Non Bracketed*/0.004808,0.009153,/*Bracketed WZ:*/0.011198,0.071882),
+	float4(/*XY: Non Bracketed*/0.000471,0.005155,/*Bracketed WZ:*/0.002576,0.040480),
+	float4(/*XY: Non Bracketed*/-0.000825,0.002179,/*Bracketed WZ:*/0.000000,0.017109)
 };

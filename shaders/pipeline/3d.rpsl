@@ -8,7 +8,7 @@ node tonemap(
     [readwrite(cs)] texture hdr
 );
 
-node blit(
+node blit_srgb(
     [readonly(ps)] texture source,
     [writeonly(rendertarget)] texture dest
 );
@@ -26,6 +26,23 @@ node render_ui(
     rtv rt
 );
 
+node dof_downsample_with_coc(
+    [readonly(cs)] texture depth,
+    [readonly(cs)] texture hdr,
+    [writeonly(cs)] texture output
+);
+
+node dof_x(
+    srv hdr_and_coc,
+    [writeonly(cs)] texture output
+);
+
+node dof_y(
+    srv hdr_and_coc,
+    [writeonly(cs)] texture output,
+    [readonly(cs)] texture horizontally_blurred
+);
+
 texture dof(texture source, texture ds) {
     const ResourceDesc desc = source.desc();
     texture output = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width, desc.Height);
@@ -36,10 +53,10 @@ texture dof(texture source, texture ds) {
 // Render Graph entry point
 export void hello_rpsl([readonly(present)] texture backBuffer)
 {
-    const ResourceDesc backBufferDesc = backBuffer.desc();
+    const ResourceDesc desc = backBuffer.desc();
     
-    texture ds = create_tex2d(RPS_FORMAT_D32_FLOAT, backBufferDesc.Width, backBufferDesc.Height);
-    texture hdr = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, backBufferDesc.Width, backBufferDesc.Height);
+    texture ds = create_tex2d(RPS_FORMAT_D32_FLOAT, desc.Width, desc.Height);
+    texture hdr = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width, desc.Height);
     
     clear_depth(ds, 0.0);
     clear_color(hdr, float4(0.0, 0.0, 0.0, 1.0));
@@ -47,11 +64,19 @@ export void hello_rpsl([readonly(present)] texture backBuffer)
     draw(hdr, ds);
     render_skybox(hdr, ds);
     
-    hdr = dof(hdr, ds);
+    //hdr = dof(hdr, ds);
+
+    texture hdr_half = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width / 2, desc.Height / 2);
+    dof_downsample_with_coc(ds, hdr, hdr_half);
+    texture horizontally_blurred = create_tex2d(RPS_FORMAT_R16G16_FLOAT, desc.Width / 2, desc.Height / 2, 1, 9);
+    dof_x(hdr_half, horizontally_blurred);
+    texture hdr_half_2 = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width / 2, desc.Height / 2);
+    dof_y(hdr_half, hdr_half_2, horizontally_blurred);
+    hdr = hdr_half_2;
 
     compute_bloom_from_hdr(hdr);
 
     tonemap(hdr);
-    blit(hdr, backBuffer);   
+    blit_srgb(hdr, backBuffer);   
     render_ui(backBuffer);
 }

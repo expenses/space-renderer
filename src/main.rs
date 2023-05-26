@@ -1,6 +1,7 @@
 use glam::{Vec2, Vec3};
 use winit::event::*;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 use structopt::StructOpt;
@@ -28,15 +29,20 @@ use pipelines::{ComputePipeline, RenderPipeline, ShaderSource};
 use rps_custom_backend::{ffi, rps};
 use texture_loading::load_ktx2;
 
+type Callback = unsafe extern "C" fn(context: *const rps::CmdCallbackContext);
+
 struct Pipelines {
     downsample_initial: ComputePipeline,
     downsample: ComputePipeline,
     upsample: ComputePipeline,
-    linearize_depth: ComputePipeline,
+    compute_dof: ComputePipeline,
     tonemap: ComputePipeline,
-    blit: RenderPipeline,
+    blit_srgb: RenderPipeline,
     skybox: RenderPipeline,
     moon: RenderPipeline,
+    dof_downsample_with_coc: ComputePipeline,
+    dof_x: ComputePipeline,
+    dof_y: ComputePipeline,
 }
 
 struct UserData {
@@ -132,6 +138,7 @@ fn main() -> anyhow::Result<()> {
                     max_push_constant_size: 64 * 2,
                     max_sampled_textures_per_shader_stage: 4096,
                     max_texture_dimension_2d: 16384,
+                    max_storage_textures_per_shader_stage: 6,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -161,42 +168,70 @@ fn main() -> anyhow::Result<()> {
                 &ShaderSource::Hlsl("shaders/downsample_initial.hlsl"),
                 "downsample_initial",
                 &Default::default(),
+                false,
             ),
             downsample: ComputePipeline::new(
                 &device,
                 &ShaderSource::Hlsl("shaders/downsample.hlsl"),
                 "downsample",
                 &Default::default(),
+                false,
             ),
             upsample: ComputePipeline::new(
                 &device,
                 &ShaderSource::Hlsl("shaders/upsample.hlsl"),
                 "upsample",
                 &Default::default(),
+                false,
             ),
             tonemap: ComputePipeline::new(
                 &device,
                 &ShaderSource::Hlsl("shaders/tonemap.hlsl"),
                 "tonemap",
                 &Default::default(),
+                false,
             ),
-            linearize_depth: ComputePipeline::new(
+            compute_dof: ComputePipeline::new(
                 &device,
-                &ShaderSource::Hlsl("shaders/linearize_depth.hlsl"),
-                "linearize_depth",
+                &ShaderSource::Hlsl("shaders/compute_dof.hlsl"),
+                "compute_dof",
                 &ReflectionSettings {
                     override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
-                    //..Default::default()
                 },
+                true,
             ),
-            blit: RenderPipeline::new(
+            dof_downsample_with_coc: ComputePipeline::new(
                 &device,
-                &ShaderSource::Hlsl("shaders/blit.hlsl"),
+                &ShaderSource::Hlsl("shaders/dof_downsample_with_coc.hlsl"),
+                "dof_downsample_with_coc",
+                &ReflectionSettings {
+                    override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
+                },
+                true,
+            ),
+            dof_x: ComputePipeline::new(
+                &device,
+                &ShaderSource::Hlsl("shaders/dof_x.hlsl"),
+                "dof_x",
+                &Default::default(),
+                false,
+            ),
+            dof_y: ComputePipeline::new(
+                &device,
+                &ShaderSource::Hlsl("shaders/dof_y.hlsl"),
+                "dof_y",
+                &Default::default(),
+                false,
+            ),
+            blit_srgb: RenderPipeline::new(
+                &device,
+                &ShaderSource::Hlsl("shaders/blit_srgb.hlsl"),
                 "VSMain",
                 "PSMain",
                 &[Some(swapchain_format.into())],
                 None,
                 &[],
+                false,
             ),
             moon: RenderPipeline::new(
                 &device,
@@ -239,6 +274,7 @@ fn main() -> anyhow::Result<()> {
                         step_mode: wgpu::VertexStepMode::Instance,
                     },
                 ],
+                true,
             ),
             skybox: RenderPipeline::new(
                 &device,
@@ -254,6 +290,7 @@ fn main() -> anyhow::Result<()> {
                     bias: Default::default(),
                 }),
                 &[],
+                false,
             ),
         };
 
@@ -289,13 +326,7 @@ fn main() -> anyhow::Result<()> {
                             &queue,
                         )
                     },
-                    || {
-                        load_ktx2(
-                            &std::fs::read("assets/hdr-cubemap-2048x2048.ktx2").unwrap(),
-                            &device,
-                            &queue,
-                        )
-                    },
+                    || load_ktx2(&std::fs::read("assets/hdr.ktx2").unwrap(), &device, &queue),
                 )
             },
         );
@@ -401,7 +432,7 @@ fn main() -> anyhow::Result<()> {
             schedule_info: rps::RenderGraphCreateScheduleInfo {
                 queue_infos: queues.as_ptr(),
                 num_queues: queues.len() as u32,
-                schedule_flags: rps::ScheduleFlags::empty(),
+                schedule_flags: rps::ScheduleFlags::DISABLE_DEAD_CODE_ELIMINATION,
             },
             main_entry_create_info: rps::ProgramCreateInfo {
                 rpsl_entry_point: entry,
@@ -422,61 +453,39 @@ fn main() -> anyhow::Result<()> {
         let node_descs =
             std::slice::from_raw_parts(signature.node_descs, signature.num_node_descs as usize);
 
-        let node_names: Vec<_> = node_descs
+        let mut node_names: HashSet<_> = node_descs
             .iter()
             .map(|node| std::ffi::CStr::from_ptr(node.name).to_str().unwrap())
             .collect();
 
-        if node_names.contains(&"blit") {
-            bind_node_callback(subprogram, "blit", Some(node_callbacks::blit)).unwrap();
+        let callbacks: &[(&str, Callback)] = &[
+            ("blit_srgb", node_callbacks::blit_srgb),
+            ("draw", node_callbacks::draw),
+            ("downsample_initial", node_callbacks::downsample_initial),
+            ("downsample", node_callbacks::downsample),
+            ("upsample", node_callbacks::upsample),
+            ("tonemap", node_callbacks::tonemap),
+            ("compute_dof", node_callbacks::compute_dof),
+            ("render_skybox", node_callbacks::render_skybox),
+            ("render_ui", node_callbacks::render_ui),
+            (
+                "dof_downsample_with_coc",
+                node_callbacks::dof_downsample_with_coc,
+            ),
+            ("dof_x", node_callbacks::dof_x),
+            ("dof_y", node_callbacks::dof_y),
+        ];
+
+        node_names.remove("clear_color");
+        node_names.remove("clear_depth_stencil");
+
+        for (name, callback) in callbacks {
+            if node_names.remove(name) {
+                bind_node_callback(subprogram, name, Some(*callback)).unwrap()
+            }
         }
 
-        if node_names.contains(&"draw") {
-            bind_node_callback(subprogram, "draw", Some(node_callbacks::draw)).unwrap();
-        }
-
-        if node_names.contains(&"downsample_initial") {
-            bind_node_callback(
-                subprogram,
-                "downsample_initial",
-                Some(node_callbacks::downsample_initial),
-            )
-            .unwrap();
-        }
-
-        if node_names.contains(&"downsample") {
-            bind_node_callback(subprogram, "downsample", Some(node_callbacks::downsample)).unwrap();
-        }
-
-        if node_names.contains(&"upsample") {
-            bind_node_callback(subprogram, "upsample", Some(node_callbacks::upsample)).unwrap();
-        }
-
-        if node_names.contains(&"tonemap") {
-            bind_node_callback(subprogram, "tonemap", Some(node_callbacks::tonemap)).unwrap();
-        }
-
-        if node_names.contains(&"compute_dof") {
-            bind_node_callback(
-                subprogram,
-                "compute_dof",
-                Some(node_callbacks::linearize_depth),
-            )
-            .unwrap();
-        }
-
-        if node_names.contains(&"render_skybox") {
-            bind_node_callback(
-                subprogram,
-                "render_skybox",
-                Some(node_callbacks::render_skybox),
-            )
-            .unwrap();
-        }
-
-        if node_names.contains(&"render_ui") {
-            bind_node_callback(subprogram, "render_ui", Some(node_callbacks::render_ui)).unwrap();
-        }
+        dbg!(node_names);
 
         let mut completed_frame_index = u64::max_value();
         let mut frame_index = 0;
@@ -752,10 +761,12 @@ pub fn map_rps_format_to_wgpu(format: rps::Format) -> Option<wgpu::TextureFormat
     Some(match format {
         rps::Format::B8G8R8A8_UNORM_SRGB => wgpu::TextureFormat::Bgra8UnormSrgb,
         rps::Format::R16G16B16A16_FLOAT => wgpu::TextureFormat::Rgba16Float,
+        rps::Format::R32G32B32A32_FLOAT => wgpu::TextureFormat::Rgba32Float,
         rps::Format::D32_FLOAT => wgpu::TextureFormat::Depth32Float,
         rps::Format::UNKNOWN => return None,
         rps::Format::R32_FLOAT => wgpu::TextureFormat::R32Float,
         rps::Format::R16_FLOAT => wgpu::TextureFormat::R16Float,
+        rps::Format::R16G16_FLOAT => wgpu::TextureFormat::Rg16Float,
         rps::Format::R9G9B9E5_SHAREDEXP => wgpu::TextureFormat::Rgb9e5Ufloat,
         other => panic!("{:?}", other),
     })

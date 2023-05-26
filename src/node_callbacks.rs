@@ -5,7 +5,7 @@ use glam::{Mat4, Vec3};
 use rps_custom_backend::{ffi, rps, CmdCallbackContext};
 use wgpu::util::DeviceExt;
 
-pub unsafe extern "C" fn blit(context: *const rps::CmdCallbackContext) {
+pub unsafe extern "C" fn blit_srgb(context: *const rps::CmdCallbackContext) {
     let context = CmdCallbackContext::<CommandBuffer, UserData>::new(context);
 
     let source_view = *context.reinterpret_arg_as::<rps::ImageView>(0);
@@ -16,7 +16,7 @@ pub unsafe extern "C" fn blit(context: *const rps::CmdCallbackContext) {
     let bind_group = context
         .user_data
         .pipelines
-        .blit
+        .blit_srgb
         .bind_group_layouts
         .create_bind_group(
             &context.user_data.device,
@@ -51,7 +51,7 @@ pub unsafe extern "C" fn blit(context: *const rps::CmdCallbackContext) {
             depth_stencil_attachment: None,
         });
 
-    render_pass.set_pipeline(&context.user_data.pipelines.blit.pipeline);
+    render_pass.set_pipeline(&context.user_data.pipelines.blit_srgb.pipeline);
     render_pass.set_bind_group(0, &bind_group, &[]);
     render_pass.draw(0..3, 0..1);
 }
@@ -407,7 +407,7 @@ pub unsafe extern "C" fn tonemap(context: *const rps::CmdCallbackContext) {
     );
 }
 
-pub unsafe extern "C" fn linearize_depth(context: *const rps::CmdCallbackContext) {
+pub unsafe extern "C" fn compute_dof(context: *const rps::CmdCallbackContext) {
     let context = CmdCallbackContext::<CommandBuffer, UserData>::new(context);
 
     let depth_view = *(context.args[0] as *const rps::ImageView);
@@ -421,7 +421,7 @@ pub unsafe extern "C" fn linearize_depth(context: *const rps::CmdCallbackContext
     let bind_group = context
         .user_data
         .pipelines
-        .linearize_depth
+        .compute_dof
         .bind_group_layouts
         .create_bind_group(
             &context.user_data.device,
@@ -453,7 +453,7 @@ pub unsafe extern "C" fn linearize_depth(context: *const rps::CmdCallbackContext
         .unwrap()
         .begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
 
-    compute_pass.set_pipeline(&context.user_data.pipelines.linearize_depth.pipeline);
+    compute_pass.set_pipeline(&context.user_data.pipelines.compute_dof.pipeline);
     compute_pass.set_bind_group(0, &bind_group, &[]);
     compute_pass.dispatch_workgroups(
         dispatch_count(output_desc.width, 8),
@@ -609,6 +609,165 @@ pub unsafe extern "C" fn render_ui(context: *const rps::CmdCallbackContext) {
             None,
         )
         .unwrap();
+}
+
+pub unsafe extern "C" fn dof_downsample_with_coc(context: *const rps::CmdCallbackContext) {
+    let context = CmdCallbackContext::<CommandBuffer, UserData>::new(context);
+
+    let depth_view = *(context.args[0] as *const rps::ImageView);
+    let hdr_view = *(context.args[1] as *const rps::ImageView);
+    let output_view = *(context.args[2] as *const rps::ImageView);
+
+    let (depth, _) = load_texture_view(&context, depth_view);
+    let (hdr, _) = load_texture_view(&context, hdr_view);
+    let (output, output_desc) = load_texture_view(&context, output_view);
+
+    let bind_group = context
+        .user_data
+        .pipelines
+        .dof_downsample_with_coc
+        .bind_group_layouts
+        .create_bind_group(
+            &context.user_data.device,
+            0,
+            &mut vec![
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&depth),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&context.user_data.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&hdr),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&output),
+                },
+            ],
+        );
+
+    let mut compute_pass = context
+        .command_buffer
+        .encoder
+        .as_mut()
+        .unwrap()
+        .begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+
+    compute_pass.set_pipeline(&context.user_data.pipelines.dof_downsample_with_coc.pipeline);
+    compute_pass.set_bind_group(0, &bind_group, &[]);
+    compute_pass.dispatch_workgroups(
+        dispatch_count(output_desc.width, 8),
+        dispatch_count(output_desc.height, 8),
+        1,
+    );
+}
+
+pub unsafe extern "C" fn dof_x(context: *const rps::CmdCallbackContext) {
+    let context = CmdCallbackContext::<CommandBuffer, UserData>::new(context);
+
+    let hdr_view = *(context.args[0] as *const rps::ImageView);
+    let output_view = *(context.args[1] as *const rps::ImageView);
+
+    let (hdr, output_desc) = load_texture_view(&context, hdr_view);
+    let (output, _) = load_texture_view(&context, output_view);
+
+    let bind_group = context
+        .user_data
+        .pipelines
+        .dof_x
+        .bind_group_layouts
+        .create_bind_group(
+            &context.user_data.device,
+            0,
+            &mut vec![
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&context.user_data.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&hdr),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&output),
+                },
+            ],
+        );
+
+    let mut compute_pass = context
+        .command_buffer
+        .encoder
+        .as_mut()
+        .unwrap()
+        .begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+
+    compute_pass.set_pipeline(&context.user_data.pipelines.dof_x.pipeline);
+    compute_pass.set_bind_group(0, &bind_group, &[]);
+    compute_pass.dispatch_workgroups(
+        dispatch_count(output_desc.width, 8),
+        dispatch_count(output_desc.height, 8),
+        1,
+    );
+}
+
+pub unsafe extern "C" fn dof_y(context: *const rps::CmdCallbackContext) {
+    let context = CmdCallbackContext::<CommandBuffer, UserData>::new(context);
+
+    let hdr_view = *(context.args[0] as *const rps::ImageView);
+    let output_view = *(context.args[1] as *const rps::ImageView);
+    let horizontally_blurred_view = *(context.args[2] as *const rps::ImageView);
+
+    let (hdr, _) = load_texture_view(&context, hdr_view);
+    let (horizontally_blurred, _) = load_texture_view(&context, horizontally_blurred_view);
+    let (output, output_desc) = load_texture_view(&context, output_view);
+
+    let bind_group = context
+        .user_data
+        .pipelines
+        .dof_y
+        .bind_group_layouts
+        .create_bind_group(
+            &context.user_data.device,
+            0,
+            &mut vec![
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&context.user_data.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&hdr),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&horizontally_blurred),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&output),
+                },
+            ],
+        );
+
+    let mut compute_pass = context
+        .command_buffer
+        .encoder
+        .as_mut()
+        .unwrap()
+        .begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+
+    compute_pass.set_pipeline(&context.user_data.pipelines.dof_y.pipeline);
+    compute_pass.set_bind_group(0, &bind_group, &[]);
+    compute_pass.dispatch_workgroups(
+        dispatch_count(output_desc.width, 8),
+        dispatch_count(output_desc.height, 8),
+        1,
+    );
 }
 
 const fn dispatch_count(num: u32, group_size: u32) -> u32 {
