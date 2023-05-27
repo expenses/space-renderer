@@ -13,13 +13,15 @@ fn map_dim(dim: spirv::Dim, is_array: bool) -> wgpu::TextureViewDimension {
 
 #[derive(Clone)]
 pub struct ReflectionSettings {
-    pub override_sampled_texture_ty: Option<(u32, wgpu::TextureSampleType)>,
+    pub set_depth_texture: Option<u32>,
+    pub set_sampler_non_filtering: Option<u32>,
 }
 
 impl Default for ReflectionSettings {
     fn default() -> Self {
         Self {
-            override_sampled_texture_ty: None,
+            set_depth_texture: None,
+            set_sampler_non_filtering: None,
         }
     }
 }
@@ -73,17 +75,12 @@ pub fn reflect(bytes: &[u8], settings: &ReflectionSettings) -> Reflection {
                                 ) => wgpu::BindingType::Texture {
                                     multisampled: ty.is_multisampled,
                                     sample_type: match &ty.scalar_ty {
-                                        spirq::ty::ScalarType::Float(4) => match settings
-                                            .override_sampled_texture_ty
-                                        {
-                                            Some((binding, ty)) if binding == desc_bind.bind() => {
-                                                settings.override_sampled_texture_ty = None;
-                                                ty
+                                        spirq::ty::ScalarType::Float(4) => {
+                                            wgpu::TextureSampleType::Float {
+                                                filterable: Some(desc_bind.bind())
+                                                    != settings.set_depth_texture,
                                             }
-                                            _ => {
-                                                wgpu::TextureSampleType::Float { filterable: true }
-                                            }
-                                        },
+                                        }
                                         other => panic!("{:?}", other),
                                     },
                                     view_dimension: map_dim(ty.dim, ty.is_array),
@@ -110,9 +107,14 @@ pub fn reflect(bytes: &[u8], settings: &ReflectionSettings) -> Reflection {
                                 (
                                     spirq::ty::Type::Sampler(),
                                     spirq::reflect::DescriptorType::Sampler(),
-                                ) => {
-                                    wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
-                                }
+                                ) => wgpu::BindingType::Sampler(
+                                    if settings.set_sampler_non_filtering == Some(desc_bind.bind())
+                                    {
+                                        wgpu::SamplerBindingType::NonFiltering
+                                    } else {
+                                        wgpu::SamplerBindingType::Filtering
+                                    },
+                                ),
                                 (
                                     spirq::ty::Type::Struct(ty),
                                     spirq::reflect::DescriptorType::UniformBuffer(),

@@ -4,6 +4,7 @@
 [[vk::binding(1)]] SamplerState samp;
 [[vk::binding(2)]] Texture2D<float3> hdr_tex;
 [[vk::binding(3), vk::image_format("rgba16f")]] RWTexture2D<float4> output_tex; 
+[[vk::binding(4)]] SamplerState samp_non_filtering;
 
 float get_coc(float depth, float focusPoint)
 {
@@ -27,9 +28,9 @@ void dof_downsample_with_coc(
 
     // https://www.reddit.com/r/GraphicsProgramming/comments/f9zwin/linearising_reverse_depth_buffer/fix7ifb/
     float near_depth = 0.001;
-    float center_depth = near_depth / depth_tex.SampleLevel(samp, uv, 0).r;
+    float center_depth = near_depth / depth_tex.SampleLevel(samp_non_filtering, uv, 0).r;
 
-    float focus_point = near_depth / depth_tex.SampleLevel(samp, float2(0.5, 0.5), 0).r;
+    float focus_point = near_depth / depth_tex.SampleLevel(samp_non_filtering, float2(0.5, 0.5), 0).r;
 
     output_tex[id.xy] = float4(colour, get_coc(center_depth, focus_point));
 }

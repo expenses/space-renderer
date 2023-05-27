@@ -17,7 +17,7 @@ glam = { version = "0.23.0", features = ["bytemuck"] }
 anyhow = "1.0.71"
 dolly = "0.4.1"
 libloading = "0.8.0"
-spirq = "0.6.3"
+spirq = { git = "https://github.com/PENGUINLIONG/spirq-rs", branch = "fix-dxc-access" }
 spirv = "0.2.0"
 ktx2 = { git = "https://github.com/BVE-Reborn/ktx2"}
 zstd = "0.12.3"
@@ -27,10 +27,16 @@ log = "0.4.17"
 parking_lot = "0.12.1"
 range-alloc = { git = "https://github.com/expenses/gfx", rev = "6afbeb6d9733e295404f4fe0ac936591e277a26e" }
 goth-gltf = { git = "https://github.com/expenses/goth-gltf", version = "0.1.0" }
-rps-custom-backend = { path = "../rust-rps"}
+rps-custom-backend = { git = "https://github.com/expenses/rust-rps"}
 render-pipeline-shaders = { git = "https://github.com/expenses/render-pipeline-shaders-rs", branch = "changes", default-features=false }
 base64 = "0.21.0"
 egui_winit_platform = "0.18.0"
 egui_wgpu_backend = "0.23.0"
 egui = "0.21.0"
 rayon = "1.7.0"
+
+[patch.crates-io]
+wgpu = { git = "https://github.com/expenses/wgpu", branch = "patched-naga"}
+
+[patch.'https://github.com/gfx-rs/naga']
+naga = { git = "https://github.com/expenses/naga", branch = "runtime-descriptor-array" }

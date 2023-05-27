@@ -647,6 +647,12 @@ pub unsafe extern "C" fn dof_downsample_with_coc(context: *const rps::CmdCallbac
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(&output),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(
+                        &context.user_data.sampler_non_filtering,
+                    ),
+                },
             ],
         );
 

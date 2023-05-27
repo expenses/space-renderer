@@ -116,6 +116,8 @@ impl ComputePipeline {
         reflection_settings: &reflection::ReflectionSettings,
         raw_spirv: bool,
     ) -> Self {
+        assert_eq!(raw_spirv, false);
+
         let shader_bytes = shader.load(entry_point, "cs_6_0");
 
         let reflection = reflection::reflect(&shader_bytes, reflection_settings);
@@ -167,6 +169,8 @@ impl RenderPipeline {
         vertex_buffer_layouts: &[wgpu::VertexBufferLayout],
         raw_spirv: bool,
     ) -> Self {
+        assert_eq!(raw_spirv, false);
+
         let vertex_shader_bytes = shader.load(vertex_entry_point, "vs_6_0");
         let fragment_shader_bytes = shader.load(fragment_entry_point, "ps_6_0");
 

@@ -50,6 +50,7 @@ struct UserData {
     device: wgpu::Device,
     sampler: wgpu::Sampler,
     repeat_sampler: wgpu::Sampler,
+    sampler_non_filtering: wgpu::Sampler,
     camera_rig: dolly::rig::CameraRig,
     moon: Model,
     bloom: Model,
@@ -114,7 +115,10 @@ fn main() -> anyhow::Result<()> {
         let event_loop = winit::event_loop::EventLoop::new();
         let window = winit::window::Window::new(&event_loop).unwrap();
 
-        let instance = wgpu::Instance::default();
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::all()),
+            ..Default::default()
+        });
 
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
 
@@ -133,7 +137,7 @@ fn main() -> anyhow::Result<()> {
                     | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                     | wgpu::Features::SPIRV_SHADER_PASSTHROUGH
                     | wgpu::Features::TEXTURE_BINDING_ARRAY
-                    | wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
+                    | wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
                 limits: wgpu::Limits {
                     max_push_constant_size: 64 * 2,
                     max_sampled_textures_per_shader_stage: 4096,
@@ -195,19 +199,18 @@ fn main() -> anyhow::Result<()> {
                 &device,
                 &ShaderSource::Hlsl("shaders/compute_dof.hlsl"),
                 "compute_dof",
-                &ReflectionSettings {
-                    override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
-                },
-                true,
+                &Default::default(),
+                false,
             ),
             dof_downsample_with_coc: ComputePipeline::new(
                 &device,
                 &ShaderSource::Hlsl("shaders/dof_downsample_with_coc.hlsl"),
                 "dof_downsample_with_coc",
                 &ReflectionSettings {
-                    override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
+                    set_depth_texture: Some(0),
+                    set_sampler_non_filtering: Some(4),
                 },
-                true,
+                false,
             ),
             dof_x: ComputePipeline::new(
                 &device,
@@ -274,7 +277,7 @@ fn main() -> anyhow::Result<()> {
                         step_mode: wgpu::VertexStepMode::Instance,
                     },
                 ],
-                true,
+                false,
             ),
             skybox: RenderPipeline::new(
                 &device,
@@ -374,6 +377,11 @@ fn main() -> anyhow::Result<()> {
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }),
+            sampler_non_filtering: device.create_sampler(&wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
                 ..Default::default()
             }),
             repeat_sampler: device.create_sampler(&wgpu::SamplerDescriptor {

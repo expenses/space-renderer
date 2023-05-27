@@ -88,9 +88,12 @@ float4 PSMain(
 
     float3 view_vector = constant.camera_pos - varying.position;
 
+    float3 tex_normal = tex[info.normal_texture].Sample(samp, varying.uv).xyz * 255.0 / 127.0 - 128.0 / 127.0;
+
+    float3x3 cotangent_frame = compute_cotangent_frame(normal, -view_vector, varying.uv);
+
     if (info.normal_texture != INVALID) {
-        float3 tex_normal = tex[info.normal_texture].Sample(samp, varying.uv).xyz * 255.0 / 127.0 - 128.0 / 127.0;
-        normal = normalize(mul(compute_cotangent_frame(normal, -view_vector, varying.uv), tex_normal));
+        normal = normalize(mul(cotangent_frame, tex_normal));
     }
 
     float3 sun_dir = normalize(float3(1,1,1));
@@ -98,14 +101,18 @@ float4 PSMain(
 
     float3 albedo = info.base_color_factor.rgb;
 
+    float3 tex_albedo = tex[info.albedo_texture].Sample(samp, varying.uv).xyz;
+
     if (info.albedo_texture != INVALID) {
-        albedo *= tex[info.albedo_texture].Sample(samp, varying.uv).xyz;
+        albedo *= tex_albedo;
     }
 
     float3 emissive = info.emissive_factor;
 
+    float3 tex_emissive = tex[info.emissive_texture].Sample(samp, varying.uv).xyz;
+
     if (info.emissive_texture != INVALID) {
-        emissive *= tex[info.emissive_texture].Sample(samp, varying.uv).xyz;
+        emissive *= tex_emissive;
     }
 
     return float4(albedo * brightness + emissive, 1.0);
