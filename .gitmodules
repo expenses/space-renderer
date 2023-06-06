@@ -1,3 +1,6 @@
 [submodule "shaders/tony-mc-mapface"]
 	path = shaders/tony-mc-mapface
 	url = https://github.com/h3r2tic/tony-mc-mapface
+[submodule "shaders/FFTConvolutionBloom"]
+	path = shaders/FFTConvolutionBloom
+	url = https://github.com/AKGWSB/FFTConvolutionBloom

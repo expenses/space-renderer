@@ -56,7 +56,7 @@ fn load_shader_from_bytes(device: &wgpu::Device, bytes: &[u8], raw: bool) -> wgp
 }
 
 pub struct BindGroupLayouts {
-    inner: std::collections::BTreeMap<u32, (wgpu::BindGroupLayout, HashSet<u32>)>,
+    pub inner: std::collections::BTreeMap<u32, (wgpu::BindGroupLayout, HashSet<u32>)>,
 }
 
 impl BindGroupLayouts {

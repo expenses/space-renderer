@@ -13,6 +13,11 @@ node blit_srgb(
     [writeonly(rendertarget)] texture dest
 );
 
+node blit_compute(
+    [readonly(cs)] texture source,
+    [writeonly(cs)] texture dest
+);
+
 node compute_dof(
     [readonly(cs)] texture depth,
     [readonly(cs)] texture hdr,
@@ -50,8 +55,30 @@ texture dof(texture source, texture ds) {
     return output;
 }
 
+node fft_horizontal_forwards(
+    [readonly(cs)] texture frequency
+);
+
+node fft_horizontal_inverse(
+    [readwrite(cs)] texture frequency
+);
+
+node fft_vertical(
+    [readwrite(cs)] texture frequency,
+    bool forwards
+);
+
+node fft_convolute(
+    [readwrite(cs)] texture source,
+    [readonly(cs)] texture kernel
+);
+
+node fft_kernel_transform(
+    [readwrite(cs)] texture kernel
+);
+
 // Render Graph entry point
-export void hello_rpsl([readonly(present)] texture backBuffer)
+export void hello_rpsl([readonly(present)] texture backBuffer, [readonly(cs)] texture kernel)
 {
     const ResourceDesc desc = backBuffer.desc();
     
@@ -60,19 +87,34 @@ export void hello_rpsl([readonly(present)] texture backBuffer)
     
     clear_depth(ds, 0.0);
     clear_color(hdr, float4(0.0, 0.0, 0.0, 1.0));
-    depth_prepass(ds);
+    //depth_prepass(ds);
     draw(hdr, ds);
     render_skybox(hdr, ds);
     
     //hdr = dof(hdr, ds);
 
-    texture hdr_half = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width / 2, desc.Height / 2);
-    dof_downsample_with_coc(ds, hdr, hdr_half);
-    texture horizontally_blurred = create_tex2d(RPS_FORMAT_R16G16_FLOAT, desc.Width / 2, desc.Height / 2, 1, 9);
-    dof_x(hdr_half, horizontally_blurred);
-    texture hdr_half_2 = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width / 2, desc.Height / 2);
-    dof_y(hdr_half, hdr_half_2, horizontally_blurred);
-    hdr = hdr_half_2;
+    //texture hdr_half = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width / 2, desc.Height / 2);
+    //dof_downsample_with_coc(ds, hdr, hdr_half);
+    //texture horizontally_blurred = create_tex2d(RPS_FORMAT_R16G16_FLOAT, desc.Width / 2, desc.Height / 2, 1, 9);
+    //dof_x(hdr_half, horizontally_blurred);
+    //texture hdr_half_2 = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, desc.Width / 2, desc.Height / 2);
+    //dof_y(hdr_half, hdr_half_2, horizontally_blurred);
+    //hdr = hdr_half_2;
+
+    //texture kernel_fft = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, 1024, 1024, 1, 2);
+    //blit_compute(kernel, kernel_fft.array(0));
+    //fft_kernel_transform(kernel_fft.array(0));
+    //fft_horizontal_forwards(kernel_fft);
+    //fft_vertical(kernel_fft, true);
+
+    //texture fft_dest = create_tex2d(RPS_FORMAT_R16G16B16A16_FLOAT, 1024, 1024, 1, 2);
+    //blit_compute(hdr, fft_dest.array(0));
+    //fft_horizontal_forwards(fft_dest);
+    //fft_vertical(fft_dest, true);
+    //fft_convolute(fft_dest, kernel_fft);
+    //fft_vertical(fft_dest, false);
+    //fft_horizontal_inverse(fft_dest);
+    //hdr = fft_dest.array(0);
 
     compute_bloom_from_hdr(hdr);
 

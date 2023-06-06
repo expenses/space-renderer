@@ -2,7 +2,9 @@ use glam::{Vec2, Vec3};
 use winit::event::*;
 
 use std::collections::HashSet;
+use std::ffi::c_void;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 use wgpu::util::DeviceExt;
@@ -31,29 +33,18 @@ use texture_loading::load_ktx2;
 
 type Callback = unsafe extern "C" fn(context: *const rps::CmdCallbackContext);
 
-struct Pipelines {
-    downsample_initial: ComputePipeline,
-    downsample: ComputePipeline,
-    upsample: ComputePipeline,
-    compute_dof: ComputePipeline,
-    tonemap: ComputePipeline,
-    blit_srgb: RenderPipeline,
-    skybox: RenderPipeline,
-    moon: RenderPipeline,
-    dof_downsample_with_coc: ComputePipeline,
-    dof_x: ComputePipeline,
-    dof_y: ComputePipeline,
+fn box_untyped<T>(ty: T) -> *mut c_void {
+    Box::into_raw(Box::new(ty)) as _
 }
 
 struct UserData {
     rotation: f32,
-    device: wgpu::Device,
+    device: Arc<wgpu::Device>,
     sampler: wgpu::Sampler,
     repeat_sampler: wgpu::Sampler,
     camera_rig: dolly::rig::CameraRig,
     moon: Model,
     bloom: Model,
-    pipelines: Pipelines,
     index_buffer: buffers::IndexBuffer,
     vertex_buffers: buffers::VertexBuffers,
     tonemap_tex: wgpu::Texture,
@@ -82,6 +73,7 @@ pub fn bind_node_callback(
     subprogram: rps::Subprogram,
     entry_point: &str,
     callback: rps::PfnCmdCallback,
+    user_context: *mut c_void,
 ) -> Result<(), rps::Result> {
     let entry_point = std::ffi::CString::new(entry_point).unwrap();
 
@@ -91,6 +83,7 @@ pub fn bind_node_callback(
             entry_point.as_ptr(),
             &rps::CmdCallback {
                 pfn_callback: callback,
+                user_context,
                 ..Default::default()
             },
         )
@@ -139,6 +132,8 @@ fn main() -> anyhow::Result<()> {
                     max_sampled_textures_per_shader_stage: 4096,
                     max_texture_dimension_2d: 16384,
                     max_storage_textures_per_shader_stage: 6,
+                    max_compute_invocations_per_workgroup: 512,
+                    max_compute_workgroup_size_x: 512,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -146,6 +141,8 @@ fn main() -> anyhow::Result<()> {
             None,
         ))
         .unwrap();
+
+        let device = Arc::new(device);
 
         let mut vertex_buffers = buffers::VertexBuffers::new(1024, &device);
         let mut index_buffer = buffers::IndexBuffer::new(1024, &device);
@@ -161,138 +158,6 @@ fn main() -> anyhow::Result<()> {
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
-
-        let pipelines = Pipelines {
-            downsample_initial: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/downsample_initial.hlsl"),
-                "downsample_initial",
-                &Default::default(),
-                false,
-            ),
-            downsample: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/downsample.hlsl"),
-                "downsample",
-                &Default::default(),
-                false,
-            ),
-            upsample: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/upsample.hlsl"),
-                "upsample",
-                &Default::default(),
-                false,
-            ),
-            tonemap: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/tonemap.hlsl"),
-                "tonemap",
-                &Default::default(),
-                false,
-            ),
-            compute_dof: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/compute_dof.hlsl"),
-                "compute_dof",
-                &ReflectionSettings {
-                    override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
-                },
-                true,
-            ),
-            dof_downsample_with_coc: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/dof_downsample_with_coc.hlsl"),
-                "dof_downsample_with_coc",
-                &ReflectionSettings {
-                    override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
-                },
-                true,
-            ),
-            dof_x: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/dof_x.hlsl"),
-                "dof_x",
-                &Default::default(),
-                false,
-            ),
-            dof_y: ComputePipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/dof_y.hlsl"),
-                "dof_y",
-                &Default::default(),
-                false,
-            ),
-            blit_srgb: RenderPipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/blit_srgb.hlsl"),
-                "VSMain",
-                "PSMain",
-                &[Some(swapchain_format.into())],
-                None,
-                &[],
-                false,
-            ),
-            moon: RenderPipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/moon.hlsl"),
-                "VSMain",
-                "PSMain",
-                &[Some(wgpu::TextureFormat::Rgba16Float.into())],
-                Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Greater,
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                &[
-                    // position, normal, uv, lightmap uv
-                    wgpu::VertexBufferLayout {
-                        array_stride: 3 * 4,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: 2 * 4,
-                        attributes: &wgpu::vertex_attr_array![1 => Float32x2],
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: 3 * 4,
-                        attributes: &wgpu::vertex_attr_array![2 => Float32x3],
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: 4,
-                        attributes: &wgpu::vertex_attr_array![3 => Uint32],
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 8]>() as u64,
-                        attributes: &wgpu::vertex_attr_array![4 => Float32x3, 5 => Float32, 6 => Float32x4],
-                        step_mode: wgpu::VertexStepMode::Instance,
-                    },
-                ],
-                true,
-            ),
-            skybox: RenderPipeline::new(
-                &device,
-                &ShaderSource::Hlsl("shaders/skybox.hlsl"),
-                "VSMain",
-                "PSMain",
-                &[Some(wgpu::TextureFormat::Rgba16Float.into())],
-                Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Equal,
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                &[],
-                false,
-            ),
-        };
 
         let ((moon, bloom), (tex, cubemap)) = rayon::join(
             || {
@@ -334,6 +199,8 @@ fn main() -> anyhow::Result<()> {
         let moon = moon.unwrap();
         let bloom = bloom.unwrap();
 
+        let kernel = load_ktx2(&std::fs::read("kernel3.ktx2").unwrap(), &device, &queue);
+
         let mut keyboard_state = KeyboardState::default();
         let mut fullscreen = false;
 
@@ -370,7 +237,7 @@ fn main() -> anyhow::Result<()> {
             style: Default::default(),
         });
 
-        let user_data = Box::new(UserData {
+        let user_data_raw = box_untyped(UserData {
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
@@ -384,7 +251,7 @@ fn main() -> anyhow::Result<()> {
                 address_mode_w: wgpu::AddressMode::Repeat,
                 ..Default::default()
             }),
-            device,
+            device: device.clone(),
             queue,
             camera_rig,
             tonemap_tex: tex,
@@ -398,20 +265,17 @@ fn main() -> anyhow::Result<()> {
             platform,
             window,
             egui_rpass,
-            pipelines,
             bindless_textures: textures,
             model_info_buffer,
             rotation: 0.0,
         });
 
-        let user_data_raw = Box::into_raw(user_data);
-
         let device_create_info = rps::DeviceCreateInfo::default();
 
-        let device = unsafe { rps::device_create(&device_create_info) }.unwrap();
+        let rps_device = unsafe { rps::device_create(&device_create_info) }.unwrap();
 
         rps_custom_backend::add_callback_runtime(
-            &device,
+            &rps_device,
             &device_create_info,
             ffi::Callbacks {
                 clear_color: Some(builtin_callbacks::clear_color),
@@ -437,14 +301,14 @@ fn main() -> anyhow::Result<()> {
             main_entry_create_info: rps::ProgramCreateInfo {
                 rpsl_entry_point: entry,
                 default_node_callback: rps::CmdCallback {
-                    pfn_callback: None, //Some(rps_custom_backend::callbacks::cmd_callback_warn_unused),
+                    pfn_callback: Some(rps_custom_backend::callbacks::cmd_callback_warn_unused),
                     ..Default::default()
                 },
                 ..Default::default()
             },
             ..Default::default()
         };
-        let graph = unsafe { rps::render_graph_create(device, &x) }.unwrap();
+        let graph = unsafe { rps::render_graph_create(rps_device, &x) }.unwrap();
 
         let subprogram = rps::render_graph_get_main_entry(graph);
 
@@ -458,30 +322,259 @@ fn main() -> anyhow::Result<()> {
             .map(|node| std::ffi::CStr::from_ptr(node.name).to_str().unwrap())
             .collect();
 
-        let callbacks: &[(&str, Callback)] = &[
-            ("blit_srgb", node_callbacks::blit_srgb),
-            ("draw", node_callbacks::draw),
-            ("downsample_initial", node_callbacks::downsample_initial),
-            ("downsample", node_callbacks::downsample),
-            ("upsample", node_callbacks::upsample),
-            ("tonemap", node_callbacks::tonemap),
-            ("compute_dof", node_callbacks::compute_dof),
-            ("render_skybox", node_callbacks::render_skybox),
-            ("render_ui", node_callbacks::render_ui),
+        let callbacks: &[(&str, Callback, *mut c_void)] = &[
+            (
+                "blit_srgb",
+                node_callbacks::blit_srgb,
+                box_untyped(RenderPipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/blit_srgb.hlsl"),
+                    "VSMain",
+                    "PSMain",
+                    &[Some(swapchain_format.into())],
+                    None,
+                    &[],
+                    false,
+                )),
+            ),
+            (
+                "draw",
+                node_callbacks::draw,
+                box_untyped(RenderPipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/moon.hlsl"),
+                    "VSMain",
+                    "PSMain",
+                    &[Some(wgpu::TextureFormat::Rgba16Float.into())],
+                    Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Greater,
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    &[
+                        // position, normal, uv, lightmap uv
+                        wgpu::VertexBufferLayout {
+                            array_stride: 3 * 4,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                        },
+                        wgpu::VertexBufferLayout {
+                            array_stride: 2 * 4,
+                            attributes: &wgpu::vertex_attr_array![1 => Float32x2],
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                        },
+                        wgpu::VertexBufferLayout {
+                            array_stride: 3 * 4,
+                            attributes: &wgpu::vertex_attr_array![2 => Float32x3],
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                        },
+                        wgpu::VertexBufferLayout {
+                            array_stride: 4,
+                            attributes: &wgpu::vertex_attr_array![3 => Uint32],
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                        },
+                        wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<[f32; 8]>() as u64,
+                            attributes: &wgpu::vertex_attr_array![4 => Float32x3, 5 => Float32, 6 => Float32x4],
+                            step_mode: wgpu::VertexStepMode::Instance,
+                        },
+                    ],
+                    true,
+                )),
+            ),
+            (
+                "downsample_initial",
+                node_callbacks::downsample_initial,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/downsample_initial.hlsl"),
+                    "downsample_initial",
+                    &Default::default(),
+                    false,
+                )),
+            ),
+            (
+                "downsample",
+                node_callbacks::downsample,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/downsample.hlsl"),
+                    "downsample",
+                    &Default::default(),
+                    false,
+                )),
+            ),
+            (
+                "upsample",
+                node_callbacks::downsample,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/upsample.hlsl"),
+                    "upsample",
+                    &Default::default(),
+                    false,
+                )),
+            ),
+            (
+                "tonemap",
+                node_callbacks::tonemap,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/tonemap.hlsl"),
+                    "tonemap",
+                    &Default::default(),
+                    false,
+                )),
+            ),
+            (
+                "compute_dof",
+                node_callbacks::compute_dof,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/compute_dof.hlsl"),
+                    "compute_dof",
+                    &ReflectionSettings {
+                        override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
+                    },
+                    true,
+                )),
+            ),
+            (
+                "render_skybox",
+                node_callbacks::render_skybox,
+                box_untyped(RenderPipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/skybox.hlsl"),
+                    "VSMain",
+                    "PSMain",
+                    &[Some(wgpu::TextureFormat::Rgba16Float.into())],
+                    Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: false,
+                        depth_compare: wgpu::CompareFunction::Equal,
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    &[],
+                    false,
+                )),
+            ),
+            (
+                "render_ui",
+                node_callbacks::render_ui,
+                box_untyped(666.6665_f32),
+            ),
             (
                 "dof_downsample_with_coc",
                 node_callbacks::dof_downsample_with_coc,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/dof_downsample_with_coc.hlsl"),
+                    "dof_downsample_with_coc",
+                    &ReflectionSettings {
+                        override_sampled_texture_ty: Some((0, wgpu::TextureSampleType::Depth)),
+                    },
+                    true,
+                )),
             ),
-            ("dof_x", node_callbacks::dof_x),
-            ("dof_y", node_callbacks::dof_y),
+            (
+                "dof_x",
+                node_callbacks::dof_x,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/dof_x.hlsl"),
+                    "dof_x",
+                    &Default::default(),
+                    false,
+                )),
+            ),
+            (
+                "dof_y",
+                node_callbacks::dof_y,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/dof_y.hlsl"),
+                    "dof_y",
+                    &Default::default(),
+                    false,
+                )),
+            ),
+            (
+                "fft_horizontal_forwards",
+                node_callbacks::fft_horizontal_forwards,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/FFTConvolutionBloom/Assets/Shaders/FFTCS.compute"),
+                    "TwoForOneFFTForwardHorizontal",
+                    &Default::default(),
+                    true,
+                )),
+            ),
+            (
+                "blit_compute",
+                node_callbacks::blit_compute,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/blit_compute.hlsl"),
+                    "blit_compute",
+                    &Default::default(),
+                    false,
+                )),
+            ),
+            (
+                "fft_vertical",
+                node_callbacks::fft_vertical,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/FFTConvolutionBloom/Assets/Shaders/FFTCS.compute"),
+                    "FFTVertical",
+                    &Default::default(),
+                    true,
+                )),
+            ),
+            (
+                "fft_horizontal_inverse",
+                node_callbacks::fft_horizontal_forwards,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/FFTConvolutionBloom/Assets/Shaders/FFTCS.compute"),
+                    "TwoForOneFFTInverseHorizontal",
+                    &Default::default(),
+                    true,
+                )),
+            ),
+            (
+                "fft_convolute",
+                node_callbacks::fft_convolute,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/FFTConvolutionBloom/Assets/Shaders/FFTCS.compute"),
+                    "Convolution",
+                    &Default::default(),
+                    true,
+                )),
+            ),
+            (
+                "fft_kernel_transform",
+                node_callbacks::fft_kernel_transform,
+                box_untyped(ComputePipeline::new(
+                    &device,
+                    &ShaderSource::Hlsl("shaders/FFTConvolutionBloom/Assets/Shaders/FFTCS.compute"),
+                    "KernelTransform",
+                    &Default::default(),
+                    true,
+                )),
+            ),
         ];
 
         node_names.remove("clear_color");
         node_names.remove("clear_depth_stencil");
 
-        for (name, callback) in callbacks {
+        for (name, callback, data) in callbacks {
             if node_names.remove(name) {
-                bind_node_callback(subprogram, name, Some(*callback)).unwrap()
+                bind_node_callback(subprogram, name, Some(*callback), *data).unwrap()
             }
         }
 
@@ -493,7 +586,7 @@ fn main() -> anyhow::Result<()> {
         let start_time = Instant::now();
 
         event_loop.run(move |event, _, control_flow| {
-            let user_data = unsafe { &mut *user_data_raw };
+            let user_data = unsafe { &mut *(user_data_raw as *mut UserData) };
             user_data.platform.handle_event(&event);
 
             match event {
@@ -634,17 +727,43 @@ fn main() -> anyhow::Result<()> {
                         },
                     };
 
-                    let args: &[rps::Constant] = &[(&back_buffer) as *const rps::ResourceDesc as _];
+                    let kernel_img = rps::ResourceDesc {
+                        ty: rps::ResourceType::IMAGE_2D,
+                        temporal_layers: 1,
+                        flags: Default::default(),
+                        buffer_image: rps::ResourceBufferImageDesc {
+                            image: rps::ResourceImageDesc {
+                                width: kernel.width(),
+                                height: kernel.height(),
+                                mip_levels: 1,
+                                sample_count: 1,
+                                format: map_wgpu_format_to_rps(kernel.format()),
+                                depth_or_array_layers: 1,
+                            },
+                        },
+                    };
+
+                    let args: &[rps::Constant] = &[
+                        (&back_buffer) as *const rps::ResourceDesc as _,
+                        (&kernel_img) as *const rps::ResourceDesc as _,
+                    ];
 
                     let frame = surface
                         .get_current_texture()
                         .expect("Failed to acquire next swap chain texture");
 
-                    let backbuffer_ptr = Box::into_raw(Box::new(Resource::SurfaceFrame(
+                    let backbuffer_ptr = box_untyped(Resource::SurfaceFrame(
                         frame.texture.create_view(&Default::default()),
-                    )));
+                    ));
 
-                    let arg_resources = &[(&backbuffer_ptr) as *const *mut Resource as _];
+                    let kernel_img_ptr = box_untyped(Resource::SurfaceFrame(
+                        kernel.create_view(&Default::default()),
+                    ));
+
+                    let arg_resources = &[
+                        (&backbuffer_ptr) as *const *mut c_void as _,
+                        (&kernel_img_ptr) as *const *mut c_void as _,
+                    ];
 
                     let update_info = rps::RenderGraphUpdateInfo {
                         frame_index,
@@ -753,6 +872,7 @@ impl<'a, T> std::ops::Deref for BorrowedOrOwned<'a, T> {
 pub fn map_wgpu_format_to_rps(format: wgpu::TextureFormat) -> rps::Format {
     match format {
         wgpu::TextureFormat::Bgra8UnormSrgb => rps::Format::B8G8R8A8_UNORM_SRGB,
+        wgpu::TextureFormat::Rgba8UnormSrgb => rps::Format::R8G8B8A8_UNORM_SRGB,
         other => panic!("{:?}", other),
     }
 }
@@ -793,7 +913,13 @@ fn map_image_view_to_texture_view_desc(
         array_layer_count: Some(image_view.subresource_range.array_layers),
         format: map_rps_format_to_wgpu(image_view.base.view_format),
         dimension: match image_view.base.flags {
-            render_pipeline_shaders::ResourceViewFlags::NONE => None,
+            render_pipeline_shaders::ResourceViewFlags::NONE => {
+                if image_view.subresource_range.array_layers == 1 {
+                    Some(wgpu::TextureViewDimension::D2)
+                } else {
+                    None
+                }
+            }
             other => todo!("{:?}", other),
         },
         aspect: match image_view.component_mapping {
@@ -805,8 +931,8 @@ fn map_image_view_to_texture_view_desc(
 
 use rps_custom_backend::CmdCallbackContext;
 
-unsafe fn load_texture_view<'a>(
-    context: &CmdCallbackContext<CommandBuffer, UserData>,
+unsafe fn load_texture_view<'a, CmdCtx>(
+    context: &CmdCallbackContext<CommandBuffer, UserData, CmdCtx>,
     view: rps::ImageView,
 ) -> (
     BorrowedOrOwned<'a, wgpu::TextureView>,

@@ -1,5 +1,6 @@
 use crate::{
-    load_texture_view, map_rps_format_to_wgpu, BorrowedOrOwned, CommandBuffer, Resource, UserData,
+    box_untyped, load_texture_view, map_rps_format_to_wgpu, BorrowedOrOwned, CommandBuffer,
+    Resource, UserData,
 };
 use rps_custom_backend::{
     array_ref_to_mut_slice, ffi,
@@ -106,8 +107,7 @@ pub unsafe extern "C" fn create_resources(
                 });
 
                 resource.allocPlacement.heapId = 0;
-                resource.hRuntimeResource.ptr =
-                    Box::into_raw(Box::new(Resource::Texture(texture))) as _;
+                resource.hRuntimeResource.ptr = box_untyped(Resource::Texture(texture));
                 resource.prevFinalAccess = resource.initialAccess;
                 resource.set_isPendingCreate(false);
             }
